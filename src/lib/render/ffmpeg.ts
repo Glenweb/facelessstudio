@@ -47,9 +47,17 @@ const TRANSITION_SECONDS: Record<TransitionKind, number> = {
   cut: 0,
 };
 
-/** Filter-graph argument escaping: `:` `'` `\` and `,` are all syntax. */
+/**
+ * Filter-graph argument escaping for a file path.
+ *
+ * Backslashes are an escape mechanism inside a filter argument, so a Windows
+ * path escaped literally becomes `C\:\\Users\\...`, which FFmpeg's parser
+ * resolves inconsistently and usually reports as a missing file. FFmpeg
+ * accepts forward slashes on Windows, so normalise separators first and then
+ * escape only the drive-letter colon.
+ */
 function escapeFilterPath(path: string): string {
-  return path.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
+  return path.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
 function escapeDrawText(text: string): string {
