@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { env } from "@/lib/env";
+import { resolveBinary } from "@/lib/render/binary";
 import { styleById } from "@/lib/studio/styles";
 import type { ImageProvider, ImageRequest, ImageResult } from "./index";
 
@@ -97,7 +98,7 @@ async function normalise(input: Buffer, width: number, height: number): Promise<
   const out = join(dir, "out.png");
   try {
     await writeFile(src, input);
-    await run("ffmpeg", [
+    await run(await resolveBinary("ffmpeg"), [
       "-hide_banner",
       "-loglevel",
       "error",

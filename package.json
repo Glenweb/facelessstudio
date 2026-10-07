@@ -2,8 +2,10 @@
   "name": "faceless-video-studio",
   "version": "1.0.0",
   "private": true,
-  "description": "Faceless Video Studio — prompt or script to narrated faceless video, by GMK Media Ltd.",
-  "engines": { "node": ">=20.9.0" },
+  "description": "Faceless Video Studio \u2014 prompt or script to narrated faceless video, by GMK Media Ltd.",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
@@ -15,7 +17,8 @@
     "db:reset": "rm -rf .data/pgdata && tsx scripts/db-push.ts && tsx scripts/db-seed.ts",
     "worker": "tsx services/worker/main.ts",
     "smoke": "tsx scripts/smoke-pipeline.ts",
-    "doctor": "tsx scripts/doctor.ts"
+    "doctor": "tsx scripts/doctor.ts",
+    "selftest": "tsx scripts/selftest.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.73.0",

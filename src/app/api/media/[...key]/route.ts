@@ -1,6 +1,5 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, type ReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 import { modes } from "@/lib/env";
 import { route } from "@/lib/http/handler";
@@ -8,6 +7,69 @@ import { fail, notFound } from "@/lib/http/respond";
 import { resolveKey } from "@/lib/providers/storage/local";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Adapt a Node read stream to a web stream.
+ *
+ * `Readable.toWeb` looks like the obvious call here and is a trap: when the
+ * browser aborts a request — which an <audio> or <video> element does
+ * constantly while seeking — the web side closes its controller while the file
+ * stream keeps pushing, and the resulting "Invalid state: Controller is
+ * already closed" surfaces as an *uncaught exception* that takes the whole dev
+ * server down with it.
+ *
+ * Doing it by hand lets cancellation destroy the file handle, and makes every
+ * enqueue tolerant of a controller that has already gone away.
+ */
+function nodeToWebStream(nodeStream: ReadStream): ReadableStream<Uint8Array> {
+  let closed = false;
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      nodeStream.on("data", (chunk) => {
+        if (closed) return;
+        try {
+          controller.enqueue(new Uint8Array(chunk as Buffer));
+          // Respect backpressure rather than buffering the whole file.
+          if ((controller.desiredSize ?? 1) <= 0) nodeStream.pause();
+        } catch {
+          // The consumer went away mid-chunk; stop reading.
+          closed = true;
+          nodeStream.destroy();
+        }
+      });
+
+      nodeStream.on("end", () => {
+        if (closed) return;
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          // Already closed by a cancel; nothing to do.
+        }
+      });
+
+      nodeStream.on("error", (err) => {
+        if (closed) return;
+        closed = true;
+        try {
+          controller.error(err);
+        } catch {
+          // The consumer is gone, so there is nobody to report this to.
+        }
+      });
+    },
+
+    pull() {
+      if (!closed) nodeStream.resume();
+    },
+
+    cancel() {
+      closed = true;
+      nodeStream.destroy();
+    },
+  });
+}
 
 const CONTENT_TYPES: Record<string, string> = {
   mp4: "video/mp4",
@@ -80,9 +142,7 @@ export const GET = route<{ key: string[] }>(async (req, { params }) => {
       }
       end = Math.min(end, total - 1);
 
-      const stream = Readable.toWeb(
-        createReadStream(path, { start, end }),
-      ) as unknown as ReadableStream;
+      const stream = nodeToWebStream(createReadStream(path, { start, end }));
 
       return new NextResponse(stream, {
         status: 206,
@@ -97,7 +157,7 @@ export const GET = route<{ key: string[] }>(async (req, { params }) => {
     }
   }
 
-  const stream = Readable.toWeb(createReadStream(path)) as unknown as ReadableStream;
+  const stream = nodeToWebStream(createReadStream(path));
   return new NextResponse(stream, {
     status: 200,
     headers: {

@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { mulberry32 } from "@/lib/providers/llm/text";
+import { resolveBinary } from "@/lib/render/binary";
 import { styleById } from "@/lib/studio/styles";
 import type { ImageProvider, ImageRequest, ImageResult } from "./index";
 
@@ -188,7 +189,7 @@ export function createLocalImageProvider(): ImageProvider {
       const out = join(dir, "frame.png");
       try {
         await run(
-          "ffmpeg",
+          await resolveBinary("ffmpeg"),
           [
             "-hide_banner",
             "-loglevel",

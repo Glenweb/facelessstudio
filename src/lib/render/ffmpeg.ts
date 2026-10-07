@@ -16,6 +16,7 @@ import { stat } from "node:fs/promises";
 import { promisify } from "node:util";
 import { styleById, type TransitionKind } from "@/lib/studio/styles";
 import type { RenderJobSpec } from "@/lib/studio/types";
+import { resolveBinary } from "./binary";
 import { assFontsDir, resolveFontFile } from "./fonts";
 
 const run = promisify(execFile);
@@ -293,11 +294,13 @@ export function buildFilterGraph(input: AssembleInput): { args: string[]; expect
 /** Run the assembly, streaming progress from FFmpeg's own `-progress` output. */
 export async function assemble(input: AssembleInput): Promise<AssembleResult> {
   const { args, expectedMs } = buildFilterGraph(input);
+  // Resolve before spawning so a missing binary reports itself clearly.
+  const ffmpegCommand = await resolveBinary("ffmpeg");
   const startedAt = Date.now();
   const logLines: string[] = [];
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("ffmpeg", ["-progress", "pipe:1", "-nostats", ...args], {
+    const child = spawn(ffmpegCommand, ["-progress", "pipe:1", "-nostats", ...args], {
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -339,7 +342,7 @@ export async function assemble(input: AssembleInput): Promise<AssembleResult> {
 }
 
 export async function probeDurationMs(path: string): Promise<number> {
-  const { stdout } = await run("ffprobe", [
+  const { stdout } = await run(await resolveBinary("ffprobe"), [
     "-v",
     "error",
     "-show_entries",
@@ -354,7 +357,7 @@ export async function probeDurationMs(path: string): Promise<number> {
 /** Grab a poster frame from a third of the way in, past any opening fade. */
 export async function extractThumbnail(videoPath: string, outPath: string, durationMs: number): Promise<void> {
   const at = Math.max(0.5, (durationMs / 1000) * 0.33);
-  await run("ffmpeg", [
+  await run(await resolveBinary("ffmpeg"), [
     "-hide_banner",
     "-loglevel",
     "error",
