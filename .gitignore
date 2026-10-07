@@ -11,3 +11,6 @@ next-env.d.ts
 npm-debug.log*
 renders/
 services/render-node/node_modules/
+
+# Bundled fonts are tracked deliberately — see src/lib/render/fonts.ts
+!assets/fonts/

@@ -198,27 +198,75 @@ function topicPhrase(input: string): string {
  * leaves "compound interest".
  */
 const PREDICATE_STARTERS = new Set([
+  // Auxiliaries and copulas
   "is", "are", "was", "were", "be", "been", "being", "has", "have", "had",
+  "does", "do", "did", "will", "would", "can", "could", "should",
+  // Common narrative verbs. Listed explicitly rather than inferred from an
+  // "-ed" suffix, which would wrongly cut "the United States" and "a limited
+  // run"; a verb leaking into the subject reads far better than a chopped one.
   "makes", "make", "made", "causes", "cause", "caused", "works", "work",
   "worked", "happens", "happen", "happened", "predicted", "predicts",
   "collapsed", "collapse", "became", "become", "turns", "turned", "went",
-  "gets", "get", "got", "quietly", "actually", "really", "finally", "always",
-  "never", "still", "and", "but", "so", "because", "which", "that", "who",
+  "gets", "get", "got", "reported", "reports", "said", "says", "told",
+  "showed", "shows", "revealed", "reveals", "began", "begins", "ended",
+  "ends", "failed", "fails", "refused", "refuses", "launched", "launches",
+  "discovered", "discovers", "built", "builds", "created", "creates",
+  "changed", "changes", "killed", "kills", "died", "dies", "won", "lost",
+  "found", "finds", "took", "takes", "gave", "gives", "ran", "runs",
+  "stopped", "stops", "started", "starts", "destroyed", "vanished",
+  // Adverbs and conjunctions that open a predicate or a second clause
+  "quietly", "actually", "really", "finally", "always", "never", "still",
+  "almost", "nearly", "suddenly", "and", "but", "so", "because", "which",
+  "that", "who", "when", "while", "after", "before",
 ]);
 
 function coreSubject(topic: string): string {
+  // Strip only the leading interrogative and the "the <noun> of" frame.
+  // A bare leading determiner is kept: the frames read "a version of {t}",
+  // so dropping it yields "a version of Roman grain fleet".
   const stripped = topic
-    .replace(/^\s*(why|how|what|when|where|who|the|a|an)\s+/i, "")
-    .replace(/^\s*(science|psychology|story|truth|history|rise|fall)\s+of\s+/i, "");
+    .replace(/^\s*(why|how|what|when|where|who)\s+/i, "")
+    .replace(/^\s*(the|a|an)?\s*(science|psychology|story|truth|history|rise|fall)\s+of\s+/i, "");
 
+  // Cut at the predicate so only the subject survives.
   const words = stripped.split(/\s+/).filter(Boolean);
-  const kept: string[] = [];
+  const subjectWords: string[] = [];
   for (const word of words) {
-    if (kept.length >= 5) break;
-    if (kept.length > 0 && PREDICATE_STARTERS.has(word.toLowerCase().replace(/[^a-z]/g, ""))) break;
-    kept.push(word.replace(/[,;:.!?]+$/, ""));
+    if (subjectWords.length >= 8) break;
+    if (
+      subjectWords.length > 0 &&
+      PREDICATE_STARTERS.has(word.toLowerCase().replace(/[^a-z]/g, ""))
+    ) {
+      break;
+    }
+    subjectWords.push(word.replace(/[,;:.!?]+$/, ""));
   }
-  const phrase = (kept.length > 0 ? kept.join(" ") : stripped) || topic;
+
+  // A prompt like "the night the Soviet early warning system..." holds two
+  // noun phrases. Taking the first five words cuts the second one in half and
+  // produces "night the Soviet early warning", which is not English. Split on
+  // determiner boundaries and keep whichever chunk carries the most meaning.
+  const chunks: string[][] = [];
+  for (const word of subjectWords) {
+    const isDeterminer = /^(the|a|an)$/i.test(word);
+    if (isDeterminer && chunks.length > 0 && chunks[chunks.length - 1]!.length > 0) {
+      chunks.push([word]);
+    } else if (chunks.length === 0) {
+      chunks.push([word]);
+    } else {
+      chunks[chunks.length - 1]!.push(word);
+    }
+  }
+
+  const contentCount = (chunk: string[]): number =>
+    chunk.filter((w) => !/^(the|a|an|of|in|on|at|to|for|and|or)$/i.test(w)).length;
+
+  const best = chunks.reduce(
+    (a, b) => (contentCount(b) > contentCount(a) ? b : a),
+    chunks[0] ?? subjectWords,
+  );
+
+  const phrase = (best.length > 0 ? best.slice(0, 6) : subjectWords).join(" ") || topic;
   return phrase.charAt(0).toLowerCase() + phrase.slice(1);
 }
 

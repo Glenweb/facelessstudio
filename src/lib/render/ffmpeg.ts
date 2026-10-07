@@ -16,6 +16,7 @@ import { stat } from "node:fs/promises";
 import { promisify } from "node:util";
 import { styleById, type TransitionKind } from "@/lib/studio/styles";
 import type { RenderJobSpec } from "@/lib/studio/types";
+import { assFontsDir, resolveFontFile } from "./fonts";
 
 const run = promisify(execFile);
 
@@ -45,8 +46,6 @@ const TRANSITION_SECONDS: Record<TransitionKind, number> = {
   wipeup: 0.4,
   cut: 0,
 };
-
-const DEFAULT_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 
 /** Filter-graph argument escaping: `:` `'` `\` and `,` are all syntax. */
 function escapeFilterPath(path: string): string {
@@ -195,15 +194,18 @@ export function buildFilterGraph(input: AssembleInput): { args: string[]; expect
   // One ASS pass carries both; see buildAss for why title cards are not
   // drawn with `drawtext`.
   if (assPath) {
-    filters.push(`[${videoLabel}]ass='${escapeFilterPath(assPath)}'[vass]`);
+    const fontsDir = assFontsDir();
+    const fontsArg = fontsDir ? `:fontsdir='${escapeFilterPath(fontsDir)}'` : "";
+    filters.push(`[${videoLabel}]ass='${escapeFilterPath(assPath)}'${fontsArg}[vass]`);
     videoLabel = "vass";
   }
 
   // --- Video: watermark ---
-  if (spec.watermark) {
+  const watermarkFont = spec.watermark ? resolveFontFile("DejaVu Sans") : null;
+  if (spec.watermark && watermarkFont) {
     const size = Math.round((height > width ? width : height) * 0.026);
     filters.push(
-      `[${videoLabel}]drawtext=fontfile='${escapeFilterPath(DEFAULT_FONT)}':` +
+      `[${videoLabel}]drawtext=fontfile='${escapeFilterPath(watermarkFont)}':` +
         `text='${escapeDrawText(spec.watermark)}':fontcolor=white@0.62:fontsize=${size}:` +
         `shadowcolor=black@0.6:shadowx=2:shadowy=2:` +
         `x=w-text_w-${Math.round(size * 1.4)}:y=h-text_h-${Math.round(size * 1.4)}[vwm]`,
