@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens.
+ *
+ * The product is a dark editing tool — creators work in it at night, next to
+ * a timeline, and a bright UI fights the thing they are judging. Surfaces step
+ * up in lightness rather than using borders everywhere, so panels read as
+ * depth instead of boxes.
+ */
+@theme {
+  --color-ink-950: #07080c;
+  --color-ink-900: #0b0d14;
+  --color-ink-850: #101320;
+  --color-ink-800: #161a2b;
+  --color-ink-700: #1f2438;
+  --color-ink-600: #2c3350;
+  --color-ink-500: #414a6e;
+  --color-ink-400: #6b749a;
+  --color-ink-300: #98a0c0;
+  --color-ink-200: #c6cbe0;
+  --color-ink-100: #e8eaf4;
+
+  --color-brand-500: #6c5ce7;
+  --color-brand-400: #8a7bf0;
+  --color-brand-300: #a99ef5;
+  --color-brand-600: #5847d4;
+
+  --color-accent-400: #ffd45e;
+  --color-accent-500: #ffbe18;
+
+  --color-good-400: #3ddc97;
+  --color-good-500: #1fb87a;
+  --color-warn-400: #ffa94d;
+  --color-bad-400: #ff6b6b;
+  --color-bad-500: #e63946;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-ink-700);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--color-ink-950);
+    color: var(--color-ink-100);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* A single visible focus treatment, so keyboard users are never lost. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-400);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-brand-500);
+    color: white;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-ink-900);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-600);
+    border-radius: 6px;
+    border: 2px solid var(--color-ink-900);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-500);
+  }
+
+  textarea,
+  input,
+  select {
+    font-family: inherit;
+  }
+}
+
+@layer utilities {
+  .panel {
+    background: var(--color-ink-900);
+    border: 1px solid var(--color-ink-700);
+    border-radius: 14px;
+  }
+
+  .panel-raised {
+    background: var(--color-ink-850);
+    border: 1px solid var(--color-ink-700);
+    border-radius: 14px;
+  }
+
+  /* The hero gradient, reused on the landing page and empty states. */
+  .aurora {
+    background:
+      radial-gradient(1200px 500px at 15% -10%, rgba(108, 92, 231, 0.28), transparent 60%),
+      radial-gradient(900px 420px at 85% 0%, rgba(255, 190, 24, 0.12), transparent 60%),
+      radial-gradient(700px 500px at 50% 110%, rgba(61, 220, 151, 0.1), transparent 60%);
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  @keyframes fvs-pulse-soft {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+  .animate-pulse-soft {
+    animation: fvs-pulse-soft 1.8s ease-in-out infinite;
+  }
+
+  @keyframes fvs-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .animate-rise {
+    animation: fvs-rise 0.28s ease-out both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-pulse-soft,
+    .animate-rise {
+      animation: none;
+    }
+  }
+}
