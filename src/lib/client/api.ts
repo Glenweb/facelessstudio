@@ -18,6 +18,13 @@ export class ApiClientError extends Error {
   }
 }
 
+/**
+ * Anything that spends or grants credits changes the balance in the sidebar.
+ * The shell cannot know that from a route change alone — switching tabs inside
+ * a project never changes the path — so mutations announce themselves.
+ */
+export const CREDITS_CHANGED = "fvs:credits-changed";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -32,12 +39,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const err = (body as { error?: { code?: string; message?: string; details?: unknown } }).error;
+    // A 402 means the charge was refused, which is itself worth refreshing for.
+    if (res.status === 402 && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(CREDITS_CHANGED));
+    }
     throw new ApiClientError(
       res.status,
       err?.code ?? "unknown",
       err?.message ?? `Request failed (${res.status})`,
       err?.details,
     );
+  }
+
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method !== "GET" && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(CREDITS_CHANGED));
   }
   return body as T;
 }

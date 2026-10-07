@@ -159,10 +159,67 @@ function topicPhrase(input: string): string {
     .replace(/\s{2,}/g, " ")
     .trim();
   if (t.length === 0) t = input.trim().slice(0, 80);
-  // Keep it short enough to sit inside a sentence without reading as a run-on.
-  const words = t.split(/\s+/);
-  if (words.length > 12) t = words.slice(0, 12).join(" ");
+
+  // Keep it short enough to sit inside a sentence without reading as a
+  // run-on. Cut at a clause boundary first — truncating purely on word count
+  // leaves things like "...and what it predicted about every", which then
+  // becomes the video's title.
+  const MAX_WORDS = 12;
+  if (t.split(/\s+/).length > MAX_WORDS) {
+    const clause = t.split(/\s*[,;:—–]\s*/)[0] ?? t;
+    if (clause.split(/\s+/).length >= 3) {
+      t = clause;
+    }
+  }
+
+  let words = t.split(/\s+/);
+  if (words.length > MAX_WORDS) words = words.slice(0, MAX_WORDS);
+
+  // Never end on a word that leaves the phrase dangling.
+  const DANGLING = new Set([
+    "and", "or", "but", "the", "a", "an", "of", "in", "on", "at", "to", "for",
+    "with", "about", "every", "that", "which", "what", "from", "by", "as", "is",
+  ]);
+  while (words.length > 3 && DANGLING.has(words[words.length - 1]!.toLowerCase())) {
+    words.pop();
+  }
+  t = words.join(" ");
+
   return t.charAt(0).toLowerCase() + t.slice(1);
+}
+
+/**
+ * The core noun phrase, for dropping into a sentence.
+ *
+ * The full topic works as a title but reads terribly mid-sentence — "how
+ * compound interest quietly makes ordinary people wealthy over thirty years
+ * is not complicated" is grammatical and unusable. Strip the leading
+ * interrogative, then stop at the first word that starts the predicate, which
+ * leaves "compound interest".
+ */
+const PREDICATE_STARTERS = new Set([
+  "is", "are", "was", "were", "be", "been", "being", "has", "have", "had",
+  "makes", "make", "made", "causes", "cause", "caused", "works", "work",
+  "worked", "happens", "happen", "happened", "predicted", "predicts",
+  "collapsed", "collapse", "became", "become", "turns", "turned", "went",
+  "gets", "get", "got", "quietly", "actually", "really", "finally", "always",
+  "never", "still", "and", "but", "so", "because", "which", "that", "who",
+]);
+
+function coreSubject(topic: string): string {
+  const stripped = topic
+    .replace(/^\s*(why|how|what|when|where|who|the|a|an)\s+/i, "")
+    .replace(/^\s*(science|psychology|story|truth|history|rise|fall)\s+of\s+/i, "");
+
+  const words = stripped.split(/\s+/).filter(Boolean);
+  const kept: string[] = [];
+  for (const word of words) {
+    if (kept.length >= 5) break;
+    if (kept.length > 0 && PREDICATE_STARTERS.has(word.toLowerCase().replace(/[^a-z]/g, ""))) break;
+    kept.push(word.replace(/[,;:.!?]+$/, ""));
+  }
+  const phrase = (kept.length > 0 ? kept.join(" ") : stripped) || topic;
+  return phrase.charAt(0).toLowerCase() + phrase.slice(1);
 }
 
 const fill = (frame: string, topic: string): string =>
@@ -198,6 +255,8 @@ export function createLocalProvider(): LlmProvider {
       }
 
       const topic = topicPhrase(req.input);
+      // Frames read better with the core noun phrase; the title keeps the full one.
+      const subject = coreSubject(topic);
       const seed = hash32(`${req.input}|${req.styleId}|${req.targetSeconds}|${Date.now() >> 14}`);
       const rng = mulberry32(seed);
       const targetWords = wordsForSeconds(req.targetSeconds, req.wpm);
@@ -205,7 +264,7 @@ export function createLocalProvider(): LlmProvider {
       const styleHooks = STYLE_HOOKS[style.id];
       const hook = fill(
         styleHooks && rng() > 0.35 ? pick(rng, styleHooks) : pick(rng, FRAMES.hook!),
-        topic,
+        subject,
       );
 
       const beats: string[] = [hook];
@@ -214,7 +273,7 @@ export function createLocalProvider(): LlmProvider {
       const addBeat = (role: keyof typeof FRAMES): void => {
         const pool = FRAMES[role]!;
         for (let attempt = 0; attempt < 12; attempt++) {
-          const line = fill(pick(rng, pool), topic);
+          const line = fill(pick(rng, pool), subject);
           if (!used.has(line)) {
             used.add(line);
             beats.push(line);
@@ -224,8 +283,8 @@ export function createLocalProvider(): LlmProvider {
         // The pool is exhausted. Forget this role's history and keep writing
         // rather than silently stalling — which is what capped long-form
         // scripts at roughly two minutes regardless of the target.
-        for (const line of pool) used.delete(fill(line, topic));
-        const line = fill(pick(rng, pool), topic);
+        for (const line of pool) used.delete(fill(line, subject));
+        const line = fill(pick(rng, pool), subject);
         used.add(line);
         beats.push(line);
       };
@@ -250,14 +309,14 @@ export function createLocalProvider(): LlmProvider {
 
       for (const beat of closing) addBeat(beat);
 
-      const cta = fill(pick(rng, FRAMES.cta!), topic);
+      const cta = fill(pick(rng, FRAMES.cta!), subject);
       const body = beats.join("\n");
       const full = `${body}\n${cta}`;
       const words = countWords(full);
       const title = titleCase(topic);
 
       return {
-        title: title.length > 70 ? `${title.slice(0, 67)}…` : title,
+        title: title.length > 70 ? `${title.slice(0, 67).replace(/\s+\S*$/, "")}…` : title,
         hook,
         body,
         callToAction: cta,

@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { api, formatCredits } from "@/lib/client/api";
+import { useCallback, useEffect, useState } from "react";
+import { api, CREDITS_CHANGED, formatCredits } from "@/lib/client/api";
 import { Badge, Button } from "./ui";
 
 interface Me {
@@ -37,6 +37,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [checked, setChecked] = useState(false);
 
+  const refresh = useCallback(async (): Promise<void> => {
+    const { user } = await api.get<{ user: Me | null }>("/api/auth/me");
+    setMe(user);
+    return;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -52,9 +58,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-    // Re-reads the balance whenever the route changes, which is the cheapest
-    // way to keep the credit counter honest after a generate or a render.
   }, [pathname, router]);
+
+  // A route change is not enough on its own: the whole project workspace lives
+  // at one path, so generating a script, scene art, a voiceover or a render
+  // would leave the sidebar showing a stale balance until the user navigated.
+  useEffect(() => {
+    const onChanged = (): void => {
+      void refresh().catch(() => undefined);
+    };
+    window.addEventListener(CREDITS_CHANGED, onChanged);
+    return () => window.removeEventListener(CREDITS_CHANGED, onChanged);
+  }, [refresh]);
 
   const signOut = async (): Promise<void> => {
     await api.post("/api/auth/logout");
