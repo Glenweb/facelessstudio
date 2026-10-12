@@ -13,9 +13,13 @@ import { env } from "@/lib/env";
 import { voiceById } from "@/lib/studio/voices";
 import type { WordTiming } from "@/lib/studio/types";
 import type { TtsProvider, TtsRequest, TtsResult } from "./index";
+import { layoutProsody, totalDurationMs } from "./prosody";
 import { encodeWav } from "./wav";
 
 const SAMPLE_RATE = 24_000;
+
+/** Long enough for a several-minute narration, short enough to fail visibly. */
+const REQUEST_TIMEOUT_MS = 180_000;
 
 interface TimestampResponse {
   audio_base64?: string;
@@ -38,6 +42,7 @@ export function createElevenLabsProvider(): TtsProvider {
         `https://api.elevenlabs.io/v1/text-to-speech/${voice.elevenLabsVoiceId}/with-timestamps` +
         `?output_format=pcm_${SAMPLE_RATE}`;
 
+      const speed = req.speed ?? 1;
       const res = await fetch(url, {
         method: "POST",
         headers: { "xi-api-key": env.elevenLabsKey!, "content-type": "application/json" },
@@ -47,14 +52,34 @@ export function createElevenLabsProvider(): TtsProvider {
           voice_settings: {
             stability: voice.stability,
             similarity_boost: voice.similarityBoost,
-            speed: req.speed ?? 1,
+            // Only sent when it differs from the default. `speed` is rejected
+            // by some model and plan combinations, and sending it needlessly
+            // turns a working request into a 422.
+            ...(speed !== 1 ? { speed } : {}),
           },
         }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      }).catch((err: unknown) => {
+        if (err instanceof Error && err.name === "TimeoutError") {
+          throw new Error(
+            `ElevenLabs did not respond within ${REQUEST_TIMEOUT_MS / 1000}s. Try a shorter script, or check status.elevenlabs.io.`,
+          );
+        }
+        throw err;
       });
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(`ElevenLabs failed (${res.status}): ${text.slice(0, 400)}`);
+        // These three are the ones worth naming; anything else goes through raw.
+        const hint =
+          res.status === 401
+            ? " — check ELEVENLABS_API_KEY in .env"
+            : res.status === 429
+              ? " — quota exhausted or too many concurrent requests for your plan"
+              : res.status === 422
+                ? " — the request was rejected; the voice id or model may not be available on your plan"
+                : "";
+        throw new Error(`ElevenLabs failed (${res.status})${hint}: ${text.slice(0, 400)}`);
       }
 
       const body = (await res.json()) as TimestampResponse;
@@ -69,11 +94,45 @@ export function createElevenLabsProvider(): TtsProvider {
       const durationMs = Math.round((samples.length / SAMPLE_RATE) * 1000);
 
       const alignment = body.alignment ?? body.normalized_alignment;
-      const words = alignment ? wordsFromCharacters(alignment) : [];
+      const measured = alignment ? wordsFromCharacters(alignment) : [];
+
+      // Alignment is the whole point of this endpoint, but it can come back
+      // empty. Without timings every scene collapses to the same instant and
+      // the render silently produces nonsense, so fall back to the prosody
+      // model stretched onto the real audio length — less accurate than
+      // measured timings, still a correct video.
+      const words =
+        measured.length > 0
+          ? measured
+          : estimateWords(req.text, voice.wpm, speed, durationMs);
+
+      if (measured.length === 0) {
+        console.warn(
+          "[tts] ElevenLabs returned no alignment; captions fall back to estimated timings.",
+        );
+      }
 
       return { wav, durationMs, words, mode: "live" };
     },
   };
+}
+
+/**
+ * Prosody-derived timings scaled to the audio that actually came back.
+ *
+ * The layout gives the right *relative* spacing; scaling it onto the measured
+ * duration keeps the last word landing on the last frame.
+ */
+function estimateWords(text: string, wpm: number, speed: number, actualMs: number): WordTiming[] {
+  const timeline = layoutProsody(text, wpm, speed);
+  const modelled = totalDurationMs(timeline);
+  if (modelled <= 0 || actualMs <= 0) return [];
+  const scale = actualMs / modelled;
+  return timeline.map((w) => ({
+    word: w.word,
+    startMs: Math.round(w.startMs * scale),
+    endMs: Math.round(w.endMs * scale),
+  }));
 }
 
 /**
