@@ -10,6 +10,11 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { loadDotEnv } from "./dotenv";
+
+// Must run before anything reads process.env below. Next.js already loads
+// .env for the app; this is what makes the CLI scripts see it too.
+loadDotEnv();
 
 export type ProviderMode = "live" | "local";
 
